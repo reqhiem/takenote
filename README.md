@@ -213,3 +213,486 @@ Thanks goes to these wonderful people:
 ## License
 
 This project is open source and available under the [MIT License](LICENSE).
+
+---
+
+# Arquitectura de Integración Continua/Despliegue Continuo (CI/CD)
+
+El presente repositorio corresponde a la implementación de la arquitectura de CI/CD como parte del curso de Ingeniería de Software II de la carrera de Ciencia de la Computación en la Universidad Nacional de San Agustín de Arequipa.
+
+## Tecnologías usadas
+
+1. Lenguajes de programación: TypeScript, JavaScript, etc:
+
+2. Jenkins para la integración de las diferentes herramientas `http://localhost:8080/`.
+
+3. SonarQube para el análisis estático de código, ejecutándose en `http://localhost:9000/`.
+
+4. NodeJS como entorno de ejecución para el lenguaje JavaScript y TypeScript.
+
+5. NPM para manipular los paquetes de Node además de permitir la construcción.
+
+6. Git para el manejo de versiones y trabajo colaborativo.
+
+7. IDE VSCode con sus extensiones de soporte para Docker.
+
+8. Jest, Cypress para las pruebas unitarias así como para las end-to-end testing.
+
+9. Docker para contenerización.
+10. OWASP ZAP CLI y JMeter para las pruebas de seguridad y performance respectivamente.
+
+## Pipeline
+
+```Jenkinsfile
+pipeline {
+    agent any
+    stages {
+        stage('Construccion') {
+            steps {
+                echo "Instalando dependencias..."
+                powershell "npm install"
+
+                echo "Compilando la aplicacion..."
+                powershell "npm run build"
+            }
+        }
+        stage('Analisis estatico') {
+            steps {
+                echo 'SonarQube...'
+                withSonarQubeEnv('SonarQube') {
+                    bat "C:\\sonar\\sonar-scanner\\bin\\sonar-scanner.bat"
+                }
+            }
+        }
+        stage('Pruebas unitarias') {
+            steps {
+                echo 'Ejecutando pruebas unitarias...'
+                powershell "npm run test"
+                echo "Generando reporte de pruebas..."
+                echo "Publicando reporte de pruebas..."
+                publishHTML (target: [
+                    allowMissing: false,
+                    alwaysLinkToLastBuild: false,
+                    keepAll: true,
+                    reportDir: 'reports/jest',
+                    reportFiles: 'test-report.html',
+                    reportName: "Reporte de pruebas unitarias",
+                ])
+            }
+        }
+
+        stage('Pruebas funcionales') {
+            steps {
+                echo 'Ejecutando pruebas funcionales...'
+                powershell "rmdir -r mochawesome-report"
+                powershell "npm run test:e2e"
+
+                echo "Generando reporte de pruebas..."
+                powershell "npm run create:html:report"
+
+                echo "Publicando reporte..."
+                publishHTML (target: [
+                    allowMissing: false,
+                    alwaysLinkToLastBuild: false,
+                    keepAll: true,
+                    reportDir: 'mochawesome-report',
+                    reportFiles: 'cypress-combined-report.html',
+                    reportName: "Reporte de pruebas funcionales",
+                ])
+            }
+        }
+
+        stage('Pruebas de seguridad') {
+            steps {
+                echo "OWASP Security Tests"
+                powershell "cd E:\\dev\\is\\ZAP; ./zap.bat -cmd -quickurl http://localhost:3000/ -quickout E:\\dev\\is\\test\\reportForDVWA.html"
+
+                echo "Publicando reporte"
+
+                publishHTML (target: [
+                    allowMissing: false,
+                    alwaysLinkToLastBuild: false,
+                    keepAll: true,
+                    reportDir: 'E:\\dev\\is\\test\\',
+                    reportFiles: 'reportForDVWA.html',
+                    reportName: "OWASP ZAP Report",
+                ])
+            }
+        }
+        stage('Pruebas de Performance') {
+            steps {
+                echo "Performance Tests"
+                bat "C:\\jmeter\\bin\\jmeter -n -t E:\\dev\\is\\test\\takenote_jmeter.jmx -l E:\\dev\\is\\test\\takenote_jmeter_report.jtl"
+
+                perfReport "E:\\dev\\is\\test\\takenote_jmeter_report.jtl"
+
+            }
+        }
+    }
+}
+
+```
+
+## Construcción automática
+
+Para la etapa de la construcción automática se emplea el gestor de paquetes y construcción de NodeJS llamada NPM. Esta se basa en un archivo de JSON para declarar todas las características del proyecto así como los comandos soportados, con nombre de archivo **package.json**.
+
+```json
+{
+  "name": "takenote",
+  "version": "0.7.2",
+  "description": "A web-based notes app for developers.",
+  "author": "Pocho's Inc.",
+  "license": "MIT",
+  "private": false,
+  "main": "src/server/index.ts",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "client": "cross-env NODE_ENV=development webpack serve --config config/webpack.dev.js",
+    "server": "nodemon --config config/nodemon.config.json",
+    "build": "cross-env NODE_ENV=production webpack --config config/webpack.prod.js",
+    "prod": "node -r ts-node/register/transpile-only src/server/index.ts",
+    "start": "npm run client",
+    "test": "jest --config config/jest.config.js",
+    "test:e2e": "cypress run --config-file config/cypress.config.json",
+    "test:e2e:open": "cypress open --config-file config/cypress.config.json",
+    "test:coverage": "jest --config config/jest.config.js --coverage --watchAll=false",
+    "test:coverage:ci": "jest --config config/jest.config.js --ci --coverage --watchAll=false && cat ./coverage/lcov.info | coveralls",
+    "format": "prettier --write \"./**/*.{js,jsx,ts,tsx,css,scss,md}\"",
+    "eslint": "eslint src/**/*.{ts,tsx}",
+    "merge:reports": "mochawesome-merge mochawesome-report/*.json > cypress-combined-report.json",
+    "create:html:report": "npm run merge:reports && marge -reportDir TestReport cypress-combined-report.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reqhiem/takenote"
+  },
+  "keywords": [
+    "notes",
+    "notes-app",
+    "note-taking",
+    "markdown",
+    "markdown-editor",
+    "redux",
+    "react",
+    "typescript",
+    "react-hooks",
+    "react-hooks-redux",
+    "github"
+  ],
+  "bugs": {
+    "url": "Jira: https://reqhiem.atlassian.net/projects/REQHIEM/issues"
+  },
+  "homepage": "https://takenote.dev",
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "**/*.{js,jsx,ts,tsx}": ["eslint --fix"],
+    "**/*.{json,css,scss,md}": ["prettier --write"]
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^1.4.0",
+    "axios": "^0.21.1",
+    "clipboard-polyfill": "^3.0.1",
+    "codemirror": "^5.58.1",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.5",
+    "cors": "^2.8.5",
+    "dayjs": "^1.9.3",
+    "express": "^4.17.1",
+    "helmet": "^4.1.1",
+    "jest-html-reporter": "^3.4.2",
+    "jszip": "^3.5.0",
+    "mousetrap": "^1.6.5",
+    "mousetrap-global-bind": "^1.1.0",
+    "path-browserify": "^1.0.1",
+    "prettier": "^2.1.2",
+    "process": "^0.11.10",
+    "react": "^16.14.0",
+    "react-beautiful-dnd": "^13.0.0",
+    "react-codemirror2": "^7.2.1",
+    "react-device-detect": "^1.14.0",
+    "react-dom": "^16.14.0",
+    "react-feather": "^2.0.8",
+    "react-helmet-async": "^1.0.7",
+    "react-markdown": "^4.3.1",
+    "react-redux": "^7.2.1",
+    "react-router-dom": "^5.2.0",
+    "react-split-pane": "^0.1.92",
+    "redux": "^4.0.5",
+    "redux-saga": "^1.1.3",
+    "stream-browserify": "^3.0.0",
+    "unist-util-visit": "^2.0.3",
+    "uuid": "^8.3.1"
+  },
+  "devDependencies": {
+    "@cypress/webpack-preprocessor": "^5.4.8",
+    "@testing-library/cypress": "^7.0.1",
+    "@testing-library/jest-dom": "^5.11.4",
+    "@testing-library/react": "^11.1.0",
+    "@types/axios": "^0.14.0",
+    "@types/codemirror": "0.0.98",
+    "@types/compression": "^1.7.0",
+    "@types/cookie-parser": "^1.4.2",
+    "@types/cors": "^2.8.8",
+    "@types/express": "^4.17.8",
+    "@types/faker": "^5.1.2",
+    "@types/helmet": "0.0.48",
+    "@types/jest": "^26.0.14",
+    "@types/jszip": "^3.4.1",
+    "@types/lodash": "^4.14.162",
+    "@types/node": "^14.11.8",
+    "@types/prettier": "^2.1.3",
+    "@types/react": "^16.9.52",
+    "@types/react-beautiful-dnd": "^13.0.0",
+    "@types/react-dom": "^16.9.8",
+    "@types/react-helmet-async": "^1.0.3",
+    "@types/react-redux": "^7.1.9",
+    "@types/react-router": "^5.1.8",
+    "@types/react-router-dom": "^5.1.6",
+    "@types/testing-library__cypress": "^5.0.8",
+    "@types/uuid": "^8.3.0",
+    "@typescript-eslint/eslint-plugin": "^4.4.1",
+    "@typescript-eslint/parser": "^4.4.1",
+    "clean-webpack-plugin": "^3.0.0",
+    "clipboardy": "^2.3.0",
+    "concurrently": "^5.3.0",
+    "copy-webpack-plugin": "^6.2.1",
+    "coveralls": "^3.1.0",
+    "cross-env": "^7.0.2",
+    "css-loader": "^5.0.0",
+    "css-minimizer-webpack-plugin": "^1.1.5",
+    "cypress": "^5.4.0",
+    "cypress-file-upload": "^4.1.1",
+    "dotenv": "^8.2.0",
+    "eslint": "^7.11.0",
+    "eslint-config-prettier": "^6.13.0",
+    "eslint-import-resolver-alias": "^1.1.2",
+    "eslint-plugin-import": "^2.22.1",
+    "eslint-plugin-prettier": "^3.1.4",
+    "eslint-plugin-react": "^7.21.4",
+    "faker": "^5.1.0",
+    "html-webpack-plugin": "^5.0.0-alpha.7",
+    "husky": "^4.3.0",
+    "image-webpack-loader": "^7.0.1",
+    "jest": "^26.5.3",
+    "jest-extended": "^0.11.5",
+    "jest-raw-loader": "^1.0.1",
+    "lint-staged": "^10.4.1",
+    "mini-css-extract-plugin": "^1.0.0",
+    "mocha": "^9.1.3",
+    "mochawesome": "^7.0.1",
+    "mochawesome-merge": "^4.2.1",
+    "mochawesome-report-generator": "^6.0.1",
+    "node-sass": "^4.14.1",
+    "nodemon": "^2.0.5",
+    "sass-loader": "^10.0.3",
+    "style-loader": "^2.0.0",
+    "ts-jest": "^26.4.1",
+    "ts-loader": "^8.0.5",
+    "ts-node": "^9.0.0",
+    "typescript": "^4.0.3",
+    "webpack": "^5.1.3",
+    "webpack-cli": "^4.0.0",
+    "webpack-dev-server": "^3.11.0",
+    "webpack-merge": "^5.2.0"
+  }
+}
+```
+
+```
+stage('Construccion') {
+  steps {
+      echo "Instalando dependencias..."
+      powershell "npm install"
+
+      echo "Compilando la aplicacion..."
+      powershell "npm run build"
+  }
+}
+```
+
+Configuración del Pipeline en la fase de construcción automática (Build).
+
+## Análisis estático
+
+Para el análisis estático del código fuente se usó la herramienta de software SonarQube y su aditivo SonarQube Scanner.
+
+```
+stage('Analisis estatico') {
+  steps {
+      echo 'SonarQube...'
+      withSonarQubeEnv('SonarQube') {
+          bat "C:\\sonar\\sonar-scanner\\bin\\sonar-scanner.bat"
+      }
+  }
+}
+```
+
+![SonarQube](docs/imgs/01sonarqube.png)
+
+## Pruebas unitarias
+
+Para las pruebas unitarias se usó el marco de pruebas de JavaScript Jest debido a su simplicidad de uso y versatilidad de integración con las tecnologías emergentes.
+
+```
+stage('Pruebas unitarias') {
+  steps {
+      echo 'Ejecutando pruebas unitarias...'
+      powershell "npm run test"
+      echo "Generando reporte de pruebas..."
+      echo "Publicando reporte de pruebas..."
+      publishHTML (target: [
+          allowMissing: false,
+          alwaysLinkToLastBuild: false,
+          keepAll: true,
+          reportDir: 'reports/jest',
+          reportFiles: 'test-report.html',
+          reportName: "Reporte de pruebas unitarias",
+      ])
+  }
+}
+```
+
+![SonarQube](docs/imgs/02unittest.png)
+
+## Pruebas de integración
+
+Para las pruebas de integración se usó Cypress, una herramienta de prueba de interfaz de usuario de próxima generación creada para la web moderna, que ofrece pruebas rápidas, fáciles y confiables para cualquier cosa que se ejecute en un navegador.
+
+```
+stage('Pruebas funcionales') {
+  steps {
+      echo 'Ejecutando pruebas funcionales...'
+      powershell "rmdir -r mochawesome-report"
+      powershell "npm run test:e2e"
+
+      echo "Generando reporte de pruebas..."
+      powershell "npm run create:html:report"
+
+      echo "Publicando reporte..."
+      publishHTML (target: [
+          allowMissing: false,
+          alwaysLinkToLastBuild: false,
+          keepAll: true,
+          reportDir: 'mochawesome-report',
+          reportFiles: 'cypress-combined-report.html',
+          reportName: "Reporte de pruebas funcionales",
+      ])
+  }
+}
+```
+
+![SonarQube](docs/imgs/03e2etest.png)
+
+## Pruebas de integración
+
+Las pruebas de seguridad del software son el proceso de evaluar y probar un sistema para descubrir los riesgos de seguridad y las vulnerabilidades del sistema y sus datos. Para tal propósito se usó la herramienta OWASP ZAP el cual es un aplicación Java que se puede ejecutar en versión Standalone como un software que dispone de una interfaz gráfica de usuario.
+
+```
+stage('Pruebas de seguridad') {
+  steps {
+      echo "OWASP Security Tests"
+      powershell "cd E:\\dev\\is\\ZAP; ./zap.bat -cmd -quickurl http://localhost:3000/ -quickout E:\\dev\\is\\test\\reportForDVWA.html"
+
+      echo "Publicando reporte"
+
+      publishHTML (target: [
+          allowMissing: false,
+          alwaysLinkToLastBuild: false,
+          keepAll: true,
+          reportDir: 'E:\\dev\\is\\test\\',
+          reportFiles: 'reportForDVWA.html',
+          reportName: "OWASP ZAP Report",
+      ])
+  }
+}
+```
+
+![SonarQube](docs/imgs/04owaspzap.png)
+
+## Pruebas de performance
+
+Para las pruebas de performance, en principio definimos el plan pruebas mediante la interfaz gráfica de la herramienta JMeter, allí podemos agregar el grupo de hilos (Usuarios) configurando sus parámetros en una cantidad de usuarios gigante para estresar la dirección URL, el número de bucles a realizar, además configuramos el objeto HTTP Request con sus parámetros necesarios para testear la dirección URL `http://localhost:3000/` y por último se le añade objetos listener para captar la salida de los resultados añadiendo aserciones para corroborar el contenido de la página principal al ser un aplicativo de tipo SPA (Single Page Application).
+
+```
+stage('Pruebas de Performance') {
+  steps {
+      echo "Performance Tests"
+      bat "C:\\jmeter\\bin\\jmeter -n -t E:\\dev\\is\\test\\takenote_jmeter.jmx -l E:\\dev\\is\\test\\takenote_jmeter_report.jtl"
+
+      perfReport "E:\\dev\\is\\test\\takenote_jmeter_report.jtl"
+
+  }
+}
+```
+
+![SonarQube](docs/imgs/05jmeter.png)
+
+## Despliegue automático
+
+Para el despliegue, específicamente la contenerización del software se usó la herramienta Docker en el sistema operativo Windows empaquetar la versión de NodeJS que se emplea en el proyecto así como sus respectivos paquetes que emplea el programa.
+
+```Dockerfile
+# Use small Alpine Linux image
+FROM node:12-alpine
+
+# Set environment variables
+ENV PORT=5000
+ARG CLIENT_ID
+
+COPY . app/
+
+WORKDIR app/
+
+# Make sure dependencies exist for Webpack loaders
+RUN apk add --no-cache \
+  autoconf \
+  automake \
+  bash \
+  g++ \
+  libc6-compat \
+  libjpeg-turbo-dev \
+  libpng-dev \
+  make \
+  nasm
+RUN npm ci --only-production --silent
+
+# Build production client side React application
+RUN npm run build
+
+# Expose port for Node
+EXPOSE $PORT
+
+# Start Node server
+ENTRYPOINT npm run prod
+```
+
+```
+stage('Despliegue') {
+  steps {
+      echo "Building Docker Image..."
+      powershell "docker build --build-arg CLIENT_ID=a7520b5205a31ddb8438 -t reqhiem/takenote:v1 ."
+
+      echo "Deploying Docker Image..."
+      powershell "docker push reqhiem/takenote:v1"
+  }
+}
+```
+
+![SonarQube](docs/imgs/06dockerhub.png)
+
+## Gestion de Issues
+
+Para la gestión de Issues se optó por usar la herramienta Jira debido a su versatilidad para la administración de tareas de un proyecto, el seguimiento de errores e incidencias y para la gestión operativa de proyectos.
+
+![SonarQube](docs/imgs/07trello.png)
+
+## Resultado
+
+Producto de la ejecución de los anteriores pasos y al integrar todos los componentes del Pipeline se obtiene el siguiente resultado siendo este la ejecución sucesiva de cada actividad.
+
+![SonarQube](docs/imgs/08jenkins.png)
