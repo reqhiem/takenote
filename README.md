@@ -220,6 +220,14 @@ This project is open source and available under the [MIT License](LICENSE).
 
 El presente repositorio corresponde a la implementación de la arquitectura de CI/CD como parte del curso de Ingeniería de Software II de la carrera de Ciencia de la Computación en la Universidad Nacional de San Agustín de Arequipa.
 
+## Informes y reportes
+
+<a href="docs/pdfs/IS2_Parcial03_informe.pdf">Informe CI/CD pipeline</a>
+
+<a href="docs/pdfs/IS2_Parcial03_Plan_de_pruebas.pdf">Plan de pruebas</a>
+
+<a href="docs/pdfs/IS2_Parcial03_Reporte_plan_pruebas.pdf">Reporte de plan de pruebas</a>
+
 ## Tecnologías usadas
 
 1. Lenguajes de programación: TypeScript, JavaScript, etc:
